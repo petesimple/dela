@@ -1,9 +1,9 @@
 {
-  "name": "RackTiles",
-  "short_name": "RackTiles",
+  "name": "DeLa",
+  "short_name": "DeLa",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#0f0f12",
+  "background_color": "#0b0b10",
   "theme_color": "#121212",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
