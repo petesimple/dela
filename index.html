@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#121212" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <title>RackTiles - Pass & Play</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logoDot"></div>
+      <div>
+        <div class="title">RackTiles</div>
+        <div class="subtitle">Pass & Play - Classic Racks</div>
+      </div>
+    </div>
+
+    <div class="topControls">
+      <label class="selectWrap">
+        <span>Theme</span>
+        <select id="themeSelect"></select>
+      </label>
+      <button id="newGameBtn" class="btn ghost">New</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel info">
+      <div class="row">
+        <div class="pill">Turn: <b id="turnLabel">-</b></div>
+        <div class="pill">Pile: <b id="pileCount">-</b></div>
+      </div>
+      <div class="row">
+        <button id="drawBtn" class="btn">Draw</button>
+        <button id="endTurnBtn" class="btn primary">End Turn</button>
+      </div>
+      <div class="hint" id="hint">
+        Tap a tile to select it, then tap a destination: Rack or Table.
+      </div>
+    </section>
+
+    <section class="panel table">
+      <h2>Table</h2>
+      <div id="tableArea" class="tableArea" aria-label="Table tiles"></div>
+      <div class="tableActions">
+        <button id="clearSelectionBtn" class="btn ghost small">Clear Selection</button>
+        <button id="takeBackBtn" class="btn ghost small">Take Selected Back</button>
+      </div>
+    </section>
+
+    <section class="panel rack">
+      <h2 id="rackTitle">Rack</h2>
+      <div id="rackArea" class="rackArea" aria-label="Player rack tiles"></div>
+      <div class="rackActions">
+        <button id="sendToTableBtn" class="btn small">Send Selected To Table</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="passOverlay" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="overlayCard">
+      <div class="overlayTitle">Pass the device</div>
+      <div class="overlayText">
+        Next up: <b id="nextPlayerLabel">-</b><br/>
+        Tap when ready (no peeking, ya goblins).
+      </div>
+      <button id="revealBtn" class="btn primary">Reveal Rack</button>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="footLeft">v0.1 - racks + pass-and-play + themes</div>
+    <div class="footRight">
+      <button id="exportBtn" class="btn ghost small">Export</button>
+      <button id="importBtn" class="btn ghost small">Import</button>
+      <input id="importFile" type="file" accept="application/json" hidden />
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
