@@ -1,4 +1,4 @@
-const CACHE = "racktiles-v01";
+const CACHE = "dela-v02";
 const ASSETS = [
   "./",
   "./index.html",
