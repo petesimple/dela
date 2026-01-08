@@ -7,7 +7,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="apple-touch-icon" href="icon-192.png" />
-  <title>RackTiles - Pass & Play</title>
+  <title>DeLa</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -15,8 +15,8 @@
     <div class="brand">
       <div class="logoDot"></div>
       <div>
-        <div class="title">RackTiles</div>
-        <div class="subtitle">Pass & Play - Classic Racks</div>
+        <div class="title">DeLa</div>
+        <div class="subtitle">Pass & Play - Classic Racks - v0.2</div>
       </div>
     </div>
 
@@ -35,18 +35,30 @@
         <div class="pill">Turn: <b id="turnLabel">-</b></div>
         <div class="pill">Pile: <b id="pileCount">-</b></div>
       </div>
+
+      <div class="row">
+        <div class="pill">Opening: <b id="openingLabel">-</b></div>
+        <div class="pill">Table: <b id="tableStatus">-</b></div>
+      </div>
+
       <div class="row">
         <button id="drawBtn" class="btn">Draw</button>
         <button id="endTurnBtn" class="btn primary">End Turn</button>
       </div>
+
       <div class="hint" id="hint">
-        Tap a tile to select it, then tap a destination: Rack or Table.
+        Tap a tile to select it. Then tap a meld row (or New Meld) to place it.
       </div>
     </section>
 
     <section class="panel table">
-      <h2>Table</h2>
-      <div id="tableArea" class="tableArea" aria-label="Table tiles"></div>
+      <div class="tableHeader">
+        <h2>Table Melds</h2>
+        <button id="newMeldBtn" class="btn ghost small">New Meld</button>
+      </div>
+
+      <div id="tableArea" class="tableArea" aria-label="Table melds"></div>
+
       <div class="tableActions">
         <button id="clearSelectionBtn" class="btn ghost small">Clear Selection</button>
         <button id="takeBackBtn" class="btn ghost small">Take Selected Back</button>
@@ -54,10 +66,15 @@
     </section>
 
     <section class="panel rack">
-      <h2 id="rackTitle">Rack</h2>
+      <div class="rackHeader">
+        <h2 id="rackTitle">Rack</h2>
+        <button id="sortRackBtn" class="btn ghost small">Sort</button>
+      </div>
+
       <div id="rackArea" class="rackArea" aria-label="Player rack tiles"></div>
+
       <div class="rackActions">
-        <button id="sendToTableBtn" class="btn small">Send Selected To Table</button>
+        <button id="sendToActiveMeldBtn" class="btn small">Send Selected To Active Meld</button>
       </div>
     </section>
   </main>
@@ -74,7 +91,7 @@
   </div>
 
   <footer class="footer">
-    <div class="footLeft">v0.1 - racks + pass-and-play + themes</div>
+    <div class="footLeft">DeLa v0.2 - melds + validation + opening 30</div>
     <div class="footRight">
       <button id="exportBtn" class="btn ghost small">Export</button>
       <button id="importBtn" class="btn ghost small">Import</button>
