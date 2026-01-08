@@ -1,20 +1,9 @@
-/* RackTiles v0.1 - pass-and-play racks + basic table placement + themes */
+/* DeLa v0.2 - pass-and-play racks + meld rows + validation + opening 30 */
 
-const STORAGE_KEY = "racktiles_state_v01";
+const STORAGE_KEY = "dela_state_v02";
 const DEFAULT_PLAYERS = ["Player 1", "Player 2"];
 
 const THEMES = [
-  {
-    id: "classic",
-    name: "Classic",
-    vars: {
-      "--bg": "#0f0f12",
-      "--panel": "#17171c",
-      "--panel2": "#1e1e25",
-      "--accent": "#53d769",
-      "--tileRadius": "12px"
-    }
-  },
   {
     id: "de-la",
     name: "De La Birthday (Gold)",
@@ -24,6 +13,17 @@ const THEMES = [
       "--panel2": "#241c10",
       "--accent": "#f0c23a",
       "--tileRadius": "14px"
+    }
+  },
+  {
+    id: "classic",
+    name: "Classic",
+    vars: {
+      "--bg": "#0f0f12",
+      "--panel": "#17171c",
+      "--panel2": "#1e1e25",
+      "--accent": "#53d769",
+      "--tileRadius": "12px"
     }
   },
   {
@@ -41,9 +41,8 @@ const THEMES = [
 
 let state = null;
 
-// ---------- Game setup ----------
+// ---------- Deck ----------
 function makeDeck(){
-  // Standard Rummikub-ish: 1-13, 4 colors, 2 copies each = 104 + 2 jokers
   const colors = ["red","blue","yellow","black"];
   const tiles = [];
   let id = 0;
@@ -68,14 +67,11 @@ function shuffle(arr){
   return arr;
 }
 
+// ---------- State ----------
 function newGame(playerNames = DEFAULT_PLAYERS){
   const deck = shuffle(makeDeck());
-  const players = playerNames.map(name => ({
-    name,
-    rack: []
-  }));
+  const players = playerNames.map(name => ({ name, rack: [] }));
 
-  // Deal 14 each (common)
   for (let i = 0; i < 14; i++){
     for (const p of players){
       p.rack.push(deck.pop());
@@ -83,16 +79,19 @@ function newGame(playerNames = DEFAULT_PLAYERS){
   }
 
   state = {
-    v: "0.1",
-    themeId: "classic",
+    v: "0.2",
+    themeId: "de-la",
     players,
     current: 0,
     pile: deck,
-    table: [],      // flat list for v0.1
-    selected: null, // { area: "rack"|"table", tileId }
+    table: [], // melds: [{id, tiles:[]}]
+    hasOpened: Array(playerNames.length).fill(false),
+    activeMeldId: null,
+    selected: null, // { area: "rack"|"meld", meldId?:string, tileId:string }
     passOverlay: true
   };
 
+  sortRack(getCurrentPlayer().rack);
   saveState();
   applyTheme(state.themeId);
   showPassOverlay(true);
@@ -124,83 +123,10 @@ function applyTheme(themeId){
   saveState();
 }
 
-// ---------- UI helpers ----------
-function tileLabel(tile){
-  return tile.joker ? "J" : String(tile.n);
-}
-function tileSub(tile){
-  return tile.joker ? "joker" : tile.c;
-}
-
-function getCurrentPlayer(){
-  return state.players[state.current];
-}
-
-function findTile(area, tileId){
-  if (area === "rack"){
-    const p = getCurrentPlayer();
-    return p.rack.find(t => t.id === tileId) || null;
-  }
-  if (area === "table"){
-    return state.table.find(t => t.id === tileId) || null;
-  }
-  return null;
-}
-
-function removeTile(area, tileId){
-  if (area === "rack"){
-    const p = getCurrentPlayer();
-    const idx = p.rack.findIndex(t => t.id === tileId);
-    if (idx >= 0) return p.rack.splice(idx,1)[0];
-  }
-  if (area === "table"){
-    const idx = state.table.findIndex(t => t.id === tileId);
-    if (idx >= 0) return state.table.splice(idx,1)[0];
-  }
-  return null;
-}
-
-function clearSelection(){
-  state.selected = null;
-  saveState();
-  renderAll();
-}
-
-function selectTile(area, tileId){
-  const exists = findTile(area, tileId);
-  if (!exists) return;
-
-  // toggle
-  if (state.selected && state.selected.area === area && state.selected.tileId === tileId){
-    clearSelection();
-    return;
-  }
-
-  state.selected = { area, tileId };
-  saveState();
-  renderAll();
-}
-
-// Move selected tile to destination area
-function moveSelectedTo(destArea){
-  if (!state.selected) return;
-  const { area, tileId } = state.selected;
-  if (area === destArea) return;
-
-  const tile = removeTile(area, tileId);
-  if (!tile) return;
-
-  if (destArea === "rack"){
-    getCurrentPlayer().rack.push(tile);
-    sortRack(getCurrentPlayer().rack);
-  } else if (destArea === "table"){
-    state.table.push(tile);
-  }
-
-  state.selected = null;
-  saveState();
-  renderAll();
-}
+// ---------- Helpers ----------
+function tileLabel(tile){ return tile.joker ? "J" : String(tile.n); }
+function tileSub(tile){ return tile.joker ? "joker" : tile.c; }
+function getCurrentPlayer(){ return state.players[state.current]; }
 
 function sortRack(rack){
   const order = { red:0, blue:1, yellow:2, black:3 };
@@ -212,20 +138,204 @@ function sortRack(rack){
   });
 }
 
-// ---------- Turn flow ----------
+function flashHint(msg){
+  const el = document.getElementById("hint");
+  const old = el.textContent;
+  el.textContent = msg;
+  setTimeout(() => { el.textContent = old; }, 1600);
+}
+
+function getActiveMeld(){
+  if (!state.activeMeldId) return null;
+  return state.table.find(m => m.id === state.activeMeldId) || null;
+}
+
+function setActiveMeld(meldId){
+  state.activeMeldId = meldId;
+  saveState();
+  renderAll();
+}
+
+// ---------- Selection ----------
+function clearSelection(){
+  state.selected = null;
+  saveState();
+  renderAll();
+}
+
+function selectTileFromRack(tileId){
+  const p = getCurrentPlayer();
+  if (!p.rack.some(t => t.id === tileId)) return;
+
+  if (state.selected && state.selected.area === "rack" && state.selected.tileId === tileId){
+    clearSelection();
+    return;
+  }
+
+  state.selected = { area:"rack", tileId };
+  saveState();
+  renderAll();
+}
+
+function selectTileFromMeld(meldId, tileId){
+  const meld = state.table.find(m => m.id === meldId);
+  if (!meld) return;
+  if (!meld.tiles.some(t => t.id === tileId)) return;
+
+  if (state.selected && state.selected.area === "meld" && state.selected.meldId === meldId && state.selected.tileId === tileId){
+    clearSelection();
+    return;
+  }
+
+  state.selected = { area:"meld", meldId, tileId };
+  saveState();
+  renderAll();
+}
+
+function removeSelectedTile(){
+  if (!state.selected) return null;
+
+  const p = getCurrentPlayer();
+  if (state.selected.area === "rack"){
+    const idx = p.rack.findIndex(t => t.id === state.selected.tileId);
+    if (idx >= 0) return p.rack.splice(idx,1)[0];
+    return null;
+  }
+
+  if (state.selected.area === "meld"){
+    const meld = state.table.find(m => m.id === state.selected.meldId);
+    if (!meld) return null;
+    const idx = meld.tiles.findIndex(t => t.id === state.selected.tileId);
+    if (idx >= 0) return meld.tiles.splice(idx,1)[0];
+    return null;
+  }
+
+  return null;
+}
+
+function cleanupEmptyMelds(){
+  state.table = state.table.filter(m => m.tiles.length > 0);
+  if (state.activeMeldId && !state.table.some(m => m.id === state.activeMeldId)){
+    state.activeMeldId = state.table[0]?.id || null;
+  }
+}
+
+// ---------- Meld actions ----------
+function newMeld(){
+  const id = `m${Date.now()}_${Math.floor(Math.random()*1000)}`;
+  state.table.push({ id, tiles: [] });
+  state.activeMeldId = id;
+  saveState();
+  renderAll();
+}
+
+function placeSelectedIntoMeld(meldId){
+  if (!state.selected) return;
+
+  const tile = removeSelectedTile();
+  if (!tile) return;
+
+  const meld = state.table.find(m => m.id === meldId);
+  if (!meld){
+    // if target meld missing, create one and use it
+    state.table.push({ id: meldId, tiles: [] });
+  }
+
+  const target = state.table.find(m => m.id === meldId);
+  target.tiles.push(tile);
+
+  cleanupEmptyMelds();
+  state.selected = null;
+  saveState();
+  renderAll();
+}
+
+function takeSelectedBackToRack(){
+  if (!state.selected) return;
+
+  const tile = removeSelectedTile();
+  if (!tile) return;
+
+  getCurrentPlayer().rack.push(tile);
+  sortRack(getCurrentPlayer().rack);
+
+  cleanupEmptyMelds();
+  state.selected = null;
+  saveState();
+  renderAll();
+}
+
+// ---------- Validation (Rummikub-ish) ----------
+function validateMeld(meld){
+  const tiles = meld.tiles;
+  if (tiles.length < 3) return false;
+
+  const nonJokers = tiles.filter(t => !t.joker);
+  if (nonJokers.length === 0) return true;
+
+  const nums = nonJokers.map(t => t.n);
+  const colors = nonJokers.map(t => t.c);
+
+  // SET: same number, all colors unique, len 3-4
+  const allSameNumber = nums.every(n => n === nums[0]);
+  if (allSameNumber){
+    const uniqueColors = new Set(colors).size === colors.length;
+    return uniqueColors && tiles.length <= 4;
+  }
+
+  // RUN: same color, consecutive with jokers filling gaps
+  const allSameColor = colors.every(c => c === colors[0]);
+  if (!allSameColor) return false;
+
+  const sorted = [...nonJokers].sort((a,b) => a.n - b.n);
+
+  // no duplicate numbers in a run
+  for (let i = 1; i < sorted.length; i++){
+    if (sorted[i].n === sorted[i-1].n) return false;
+  }
+
+  let gaps = 0;
+  for (let i = 1; i < sorted.length; i++){
+    gaps += (sorted[i].n - sorted[i-1].n - 1);
+  }
+
+  const jokers = tiles.filter(t => t.joker).length;
+  return gaps <= jokers;
+}
+
+function tableIsValid(){
+  // All melds must be valid. Empty table is valid.
+  return state.table.every(validateMeld);
+}
+
+function meldValue(meld){
+  return meld.tiles
+    .filter(t => !t.joker)
+    .reduce((s,t) => s + t.n, 0);
+}
+
+function meetsOpeningRequirement(){
+  const total = state.table.reduce((s,m) => s + meldValue(m), 0);
+  return total >= 30;
+}
+
+// ---------- Turns ----------
 function showPassOverlay(on){
   const overlay = document.getElementById("passOverlay");
   overlay.classList.toggle("hidden", !on);
   state.passOverlay = on;
   saveState();
 
-  const next = getCurrentPlayer().name;
-  document.getElementById("nextPlayerLabel").textContent = next;
+  document.getElementById("nextPlayerLabel").textContent = getCurrentPlayer().name;
 }
 
 function nextTurn(){
   state.current = (state.current + 1) % state.players.length;
   state.selected = null;
+
+  // Keep active meld, but if none, select first
+  if (!state.activeMeldId) state.activeMeldId = state.table[0]?.id || null;
+
   saveState();
   showPassOverlay(true);
   renderAll();
@@ -243,45 +353,47 @@ function drawTile(){
   renderAll();
 }
 
-function flashHint(msg){
-  const el = document.getElementById("hint");
-  const old = el.textContent;
-  el.textContent = msg;
-  el.style.opacity = "1";
-  setTimeout(() => { el.textContent = old; }, 1400);
+function endTurn(){
+  const playerIndex = state.current;
+
+  cleanupEmptyMelds();
+
+  if (!tableIsValid()){
+    flashHint("Fix invalid melds before ending turn.");
+    renderAll();
+    return;
+  }
+
+  if (!state.hasOpened[playerIndex]){
+    if (state.table.length === 0){
+      flashHint("You must open with melds totaling 30.");
+      return;
+    }
+    if (!meetsOpeningRequirement()){
+      flashHint("Opening meld must total 30 points.");
+      return;
+    }
+    state.hasOpened[playerIndex] = true;
+  }
+
+  // Win check
+  if (getCurrentPlayer().rack.length === 0){
+    flashHint(`${getCurrentPlayer().name} wins!`);
+    // Keep game state for bragging rights
+    saveState();
+    renderAll();
+    return;
+  }
+
+  saveState();
+  nextTurn();
 }
 
 // ---------- Render ----------
-function renderAll(){
-  // labels
-  document.getElementById("turnLabel").textContent = getCurrentPlayer().name;
-  document.getElementById("pileCount").textContent = String(state.pile.length);
-  document.getElementById("rackTitle").textContent = `${getCurrentPlayer().name} Rack`;
-
-  // rack
-  const rackArea = document.getElementById("rackArea");
-  rackArea.innerHTML = "";
-  const rack = getCurrentPlayer().rack;
-  for (const tile of rack){
-    rackArea.appendChild(renderTile("rack", tile));
-  }
-
-  // table
-  const tableArea = document.getElementById("tableArea");
-  tableArea.innerHTML = "";
-  for (const tile of state.table){
-    tableArea.appendChild(renderTile("table", tile));
-  }
-}
-
-function renderTile(area, tile){
+function renderTile(tile, selected){
   const div = document.createElement("div");
   div.className = `tile ${tile.c} ${tile.joker ? "joker" : ""}`;
-  if (state.selected && state.selected.area === area && state.selected.tileId === tile.id){
-    div.classList.add("selected");
-  }
-  div.setAttribute("role","button");
-  div.setAttribute("aria-label", `${area} tile ${tileLabel(tile)} ${tileSub(tile)}`);
+  if (selected) div.classList.add("selected");
 
   const num = document.createElement("div");
   num.className = "num";
@@ -293,9 +405,110 @@ function renderTile(area, tile){
 
   div.appendChild(num);
   div.appendChild(sub);
-
-  div.addEventListener("click", () => selectTile(area, tile.id));
   return div;
+}
+
+function renderAll(){
+  const p = getCurrentPlayer();
+
+  // top labels
+  document.getElementById("turnLabel").textContent = p.name;
+  document.getElementById("pileCount").textContent = String(state.pile.length);
+  document.getElementById("rackTitle").textContent = `${p.name} Rack`;
+
+  const isValid = tableIsValid();
+  document.getElementById("tableStatus").textContent = isValid ? "valid" : "invalid";
+  document.getElementById("endTurnBtn").disabled = !isValid;
+
+  const opened = state.hasOpened[state.current];
+  document.getElementById("openingLabel").textContent = opened ? "done" : "needs 30";
+
+  // rack
+  const rackArea = document.getElementById("rackArea");
+  rackArea.innerHTML = "";
+  for (const tile of p.rack){
+    const selected =
+      state.selected &&
+      state.selected.area === "rack" &&
+      state.selected.tileId === tile.id;
+
+    const el = renderTile(tile, selected);
+    el.addEventListener("click", () => selectTileFromRack(tile.id));
+    rackArea.appendChild(el);
+  }
+
+  // table melds
+  const tableArea = document.getElementById("tableArea");
+  tableArea.innerHTML = "";
+
+  if (state.table.length === 0){
+    const empty = document.createElement("div");
+    empty.className = "pill";
+    empty.textContent = "No melds yet. Tap New Meld, then add tiles.";
+    tableArea.appendChild(empty);
+  } else {
+    for (const meld of state.table){
+      const meldWrap = document.createElement("div");
+      meldWrap.className = "meld";
+      if (meld.id === state.activeMeldId) meldWrap.classList.add("active");
+
+      // This is where the invalid class belongs:
+      if (!validateMeld(meld)) meldWrap.classList.add("invalid");
+
+      const header = document.createElement("div");
+      header.className = "meldHeader";
+
+      const left = document.createElement("div");
+      left.textContent = `Meld (${meld.tiles.length})`;
+
+      const right = document.createElement("button");
+      right.className = "btn ghost small";
+      right.textContent = "Make Active";
+      right.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setActiveMeld(meld.id);
+      });
+
+      header.appendChild(left);
+      header.appendChild(right);
+
+      const tilesRow = document.createElement("div");
+      tilesRow.className = "meldTiles";
+      tilesRow.addEventListener("click", () => {
+        // If a rack tile is selected, place it into this meld
+        if (state.selected && state.selected.area === "rack"){
+          placeSelectedIntoMeld(meld.id);
+        } else {
+          setActiveMeld(meld.id);
+        }
+      });
+
+      for (const tile of meld.tiles){
+        const selected =
+          state.selected &&
+          state.selected.area === "meld" &&
+          state.selected.meldId === meld.id &&
+          state.selected.tileId === tile.id;
+
+        const el = renderTile(tile, selected);
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          selectTileFromMeld(meld.id, tile.id);
+        });
+        tilesRow.appendChild(el);
+      }
+
+      meldWrap.appendChild(header);
+      meldWrap.appendChild(tilesRow);
+      tableArea.appendChild(meldWrap);
+    }
+  }
+
+  // ensure active meld exists if table exists
+  if (!state.activeMeldId && state.table.length > 0){
+    state.activeMeldId = state.table[0].id;
+    saveState();
+  }
 }
 
 // ---------- Export/Import ----------
@@ -303,7 +516,7 @@ function exportState(){
   const blob = new Blob([JSON.stringify(state, null, 2)], { type:"application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `racktiles_${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.json`;
+  a.download = `dela_${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -315,7 +528,7 @@ function importStateFromFile(file){
     try{
       const obj = JSON.parse(String(reader.result));
       state = obj;
-      applyTheme(state.themeId || "classic");
+      applyTheme(state.themeId || "de-la");
       saveState();
       showPassOverlay(true);
       renderAll();
@@ -345,7 +558,6 @@ function registerServiceWorker(){
 }
 
 function promptNewGame(){
-  // quick and simple: 2-4 players
   let count = Number(prompt("How many players? (2-4)", "2"));
   if (!Number.isFinite(count) || count < 2) count = 2;
   if (count > 4) count = 4;
@@ -362,26 +574,51 @@ window.addEventListener("DOMContentLoaded", () => {
   initThemeSelect();
   registerServiceWorker();
 
-  // load or new
   state = loadState();
   if (!state){
     newGame(DEFAULT_PLAYERS);
-  }else{
-    applyTheme(state.themeId || "classic");
+  } else {
+    // migration-ish safety
+    if (!state.v || state.v !== "0.2"){
+      newGame(DEFAULT_PLAYERS);
+      return;
+    }
+    applyTheme(state.themeId || "de-la");
     showPassOverlay(true);
     renderAll();
   }
 
-  // buttons
   document.getElementById("drawBtn").addEventListener("click", drawTile);
-  document.getElementById("endTurnBtn").addEventListener("click", () => nextTurn());
+  document.getElementById("endTurnBtn").addEventListener("click", endTurn);
+
+  document.getElementById("newMeldBtn").addEventListener("click", () => {
+    newMeld();
+    flashHint("New meld created. Add tiles to it.");
+  });
 
   document.getElementById("clearSelectionBtn").addEventListener("click", clearSelection);
-  document.getElementById("sendToTableBtn").addEventListener("click", () => moveSelectedTo("table"));
-  document.getElementById("takeBackBtn").addEventListener("click", () => moveSelectedTo("rack"));
+  document.getElementById("takeBackBtn").addEventListener("click", takeSelectedBackToRack);
+
+  document.getElementById("sendToActiveMeldBtn").addEventListener("click", () => {
+    const active = getActiveMeld();
+    if (!active){
+      flashHint("No active meld. Tap New Meld first.");
+      return;
+    }
+    if (!state.selected || state.selected.area !== "rack"){
+      flashHint("Select a rack tile first.");
+      return;
+    }
+    placeSelectedIntoMeld(active.id);
+  });
+
+  document.getElementById("sortRackBtn").addEventListener("click", () => {
+    sortRack(getCurrentPlayer().rack);
+    saveState();
+    renderAll();
+  });
 
   document.getElementById("revealBtn").addEventListener("click", () => showPassOverlay(false));
-
   document.getElementById("newGameBtn").addEventListener("click", promptNewGame);
 
   document.getElementById("exportBtn").addEventListener("click", exportState);
@@ -390,13 +627,5 @@ window.addEventListener("DOMContentLoaded", () => {
     const f = e.target.files?.[0];
     if (f) importStateFromFile(f);
     e.target.value = "";
-  });
-
-  // Tap destinations: if a tile is selected, tapping the empty rack/table area moves it
-  document.getElementById("rackArea").addEventListener("click", (e) => {
-    if (e.target === e.currentTarget) moveSelectedTo("rack");
-  });
-  document.getElementById("tableArea").addEventListener("click", (e) => {
-    if (e.target === e.currentTarget) moveSelectedTo("table");
   });
 });
